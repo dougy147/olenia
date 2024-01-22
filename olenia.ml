@@ -1,29 +1,30 @@
 Random.self_init ()
 
+let global_size = 64
+
 let cell () = Random.float 1.
-let time  = 10.
-let size  = 64
+let cell () = if Random.float 1. < 0.775 then 0. else cell () (* Probability to "meet" Orbium *)
+(*let size  = 64*)
+let size  = global_size
 let world = Array.init size (fun _ -> Array.init size (fun _ -> cell ()))
-let kernel_radius = 10
+
+let time  = 10.
+let kernel_radius = 13
 
 let gaussian_function x b c: float = exp (-.(((x -. b) /. c) ** 2. /. 2.))
-
-let range a b =
-  let rec aux acc a b =
-    if a > b then List.rev (acc)
-    else aux (a::acc) (a+1) b in
-  aux [] b a
+let mu = 0.15
+let sigma = 0.015
 
 let radius_vector = Array.init (2 * (kernel_radius)) (fun x -> float_of_int (x - (kernel_radius)) )
 
-let access_2D_matrix matrix func =
+let access_2D_matrix (matrix: 'a array array) custom_function =
   let max_isize = (Array.length matrix) in
   let max_jsize = (Array.length matrix.(0)) in
   let rec aux maxi maxj i j =
     match i,j with
     | i,_  when i = maxi -> matrix
     | i, j when j = maxj -> aux maxi maxj (i+1) 0
-    | i,j -> func matrix i j ; aux maxi maxj i (j+1)
+    | i,j -> custom_function matrix i j ; aux maxi maxj i (j+1)
   in
   aux max_isize max_jsize 0 0
 
@@ -105,8 +106,6 @@ let normalize_kernel (kernel: float array array): float array array =
   access_2D_matrix kernel func
 
 let apply_growth (world: float array array) (convolution: float array array): float array array =
-  let mu = 0.135 in
-  let sigma = 0.015 in
   let func mat i j =
       let new_state = ( mat.(i).(j) +. ( ( 1. /. time ) *. ( ( (gaussian_function (convolution.(i).(j)) mu sigma) *. 2. ) -. 1.) ) ) in
       mat.(i).(j) <- if new_state < 0. then 0.
@@ -128,32 +127,48 @@ let next_world (world: float array array): float array array =
 
 ;;
 
-open Graphics;;
 let title  = "OLenia - Lenia in OCaml"
 let width  = 1024
 let height = 1024
-let grid   = 64
+(*let grid   = 64*)
+let grid   = global_size
 let scaled_width  = width  / grid ;;
 let scaled_height = height / grid ;;
 let cell_width  = width  / scaled_width ;;
 let cell_height = height / scaled_height ;;
-let size_string = " " ^ (string_of_int (width-scaled_width)) ^ "x" ^ (string_of_int (height-scaled_height));;
+let size_string = " " ^ (string_of_int (width-cell_width)) ^ "x" ^ (string_of_int (height-cell_height));;
 
-open_graph size_string;;
-set_window_title title;;
-set_color black;
-fill_rect 0 0 width height;; (* black background "hack" *)
+type color = {r: float; g: float; b: float};;
+(* Theme Borealis *)
+let lower_color  = {r=20.; g=16.; b=110.};;
+let higher_color = {r=0.; g=255.; b=14.};;
 
-let float_to_color f_num = int_of_float (f_num *. 255.)
+Graphics.open_graph size_string;;
+Graphics.set_window_title title;;
+(*Graphics.set_color Graphics.black;*)
+Graphics.set_color (Graphics.rgb (int_of_float (lower_color.r)) (int_of_float (lower_color.g)) (int_of_float (lower_color.b)));;
+Graphics.fill_rect 0 0 width height;; (* black background "hack" *)
+
+(* let float_to_color f_num = int_of_float (f_num *. 255.) *)
+
+let float_to_color f_num =
+  (* Theme Borealis *)
+  let lower_color  = {r=20.; g=16.; b=110.} in
+  let higher_color = {r=0.; g=255.; b=14.} in
+  let red   = (int_of_float (lower_color.r +. (f_num *. ( higher_color.r -. lower_color.r )))) in
+  let green = (int_of_float (lower_color.g +. (f_num *. ( higher_color.g -. lower_color.g )))) in
+  let blue  = (int_of_float (lower_color.b +. (f_num *. ( higher_color.b -. lower_color.b )))) in
+  Graphics.rgb red green blue
 
 let draw_point x y color =
   let c = float_to_color color in (* convert value in cell to a color *)
-  set_color c;
-  fill_circle ((x-1) * scaled_width) ((y-1) * scaled_height) (scaled_width/2);;
+  Graphics.set_color c;
+  Graphics.fill_circle ((x-1) * scaled_width) ((y-1) * scaled_height) (scaled_width/2);;
+  (*
+  Graphics.fill_rect ((x-1) * scaled_width) ((y-1) * scaled_height) scaled_width scaled_height;;
+  *)
 
 let print world =
-  set_color black;
-  fill_rect 0 0 width height;
   let max_isize = (Array.length world) - 1 in
   let max_jsize = (Array.length world.(0)) - 1 in
   let rec aux maxi maxj i j =
@@ -166,10 +181,11 @@ let print world =
 
 let bigbang w =
   let rec aux generation w =
-    let event = wait_next_event [ Poll ] in
+    let event = Graphics.wait_next_event [ Poll ] in
     if event.Graphics.keypressed then
-      match (read_key ()) with
-      | '\027' -> clear_graph();close_graph()
+      match (Graphics.read_key ()) with
+      | '\027' -> Graphics.clear_graph();Graphics.close_graph()
+      | 'r'    -> aux 0 (Array.init global_size (fun _ -> Array.init global_size (fun _ -> cell ())))
       | _      -> ()
     else
       print w;
