@@ -1,9 +1,9 @@
 Random.self_init ()
 
-let global_size = 64
+let global_size = 128
 
 let cell () = Random.float 1.
-let cell () = if Random.float 1. < 0.775 then 0. else cell () (* Probability to "meet" Orbium *)
+(*let cell () = if Random.float 1. < 0.775 then 0. else cell () (* Probability to "meet" Orbium *)*)
 (*let size  = 64*)
 let size  = global_size
 let world = Array.init size (fun _ -> Array.init size (fun _ -> cell ()))
@@ -37,7 +37,9 @@ let build_distance (radius_vector: float array) (radius: int): float array array
 let build_kernel (distance: float array array): float array array =
   let size = Array.length distance in
   let k = Array.make_matrix size size  0. in
-  let func mat i j = mat.(i).(j) <- ((distance.(i).(j)) *. (gaussian_function distance.(i).(j) 0.5 0.15)) in
+  let kernel_mu = 0.5 in
+  let kernel_sigma = 0.15 in
+  let func mat i j = mat.(i).(j) <- ((distance.(i).(j)) *. (gaussian_function distance.(i).(j) kernel_mu kernel_sigma)) in
   access_2D_matrix k func
 
 let reverse_signal_vertically (signal: float array array): float array array =
