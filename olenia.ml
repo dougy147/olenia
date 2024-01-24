@@ -41,7 +41,7 @@ let orbium =
     [|0.;0.;0.;0.;0.;0.;0.;0.;0.02;0.06;0.08;0.09;0.07;0.05;0.01;0.;0.;0.;0.;0.|]
   |]
 
-let global_size = 128
+let global_size = 64
 
 let cell () = Random.float 1.
 (*let cell () = if Random.float 1. < 0.775 then 0. else cell () (* Probability to "meet" Orbium *)*)
@@ -69,7 +69,11 @@ let gaussian_function x b c: float = exp (-.(((x -. b) /. c) ** 2.) /. 2.)
 let mu = 0.15
 let sigma = 0.015
 
-let map_middle = Array.init (map_size) (fun x -> float_of_int (x - (map_size / 2) - 1) )
+let map_middle =
+  if map_size mod 2 = 0 then
+    Array.init (map_size) (fun x -> float_of_int (x - (map_size / 2) - 1) )
+  else
+    Array.init (map_size) (fun x -> float_of_int (x - (map_size / 2) - 2 ) )
 
 let arrsize (arr: 'a array) = Array.length arr
 
@@ -173,7 +177,7 @@ let rec fft_1D (v: number array): Complex.t array =
     | Float   x -> [|Complex.{re=x;im=0.}|]
     | Complex x -> [|x|]
   else
-    if not ((mod_float (Float.log2 (float_of_int n)) 2.) = mod_float (Float.log2 (float_of_int n)) 2.) then
+    if not ( Float.of_int (int_of_float ((mod_float (Float.log2 (float_of_int n)) 2.))) = mod_float (Float.log2 (float_of_int n)) 2.) then
     match v.(0) with
     | Float   x -> dft (Array.map (fun y -> Complex Complex.{re=float_value y;im=0.}) v)
     | Complex x -> dft v
