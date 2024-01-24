@@ -1,5 +1,21 @@
 Random.self_init ()
 
+(* Fourier functions can receive both float and complex arrays as parameters.
+ * The type "number" correspond to those types.
+ *)
+type number =
+ | Float of float
+ | Complex of Complex.t
+
+let float_value = function
+ | Float f -> f
+ | _ -> raise Not_found
+
+let complex_value = function
+ | Complex c -> c
+ | _ -> raise Not_found
+
+(* To put in a module soon *)
 let orbium =
   (*pattern["orbium"] = {"name":"Orbium","R":13,"T":10,"m":0.15,"s":0.015,"b":[1],*)
   [|
@@ -25,7 +41,7 @@ let orbium =
     [|0.;0.;0.;0.;0.;0.;0.;0.;0.02;0.06;0.08;0.09;0.07;0.05;0.01;0.;0.;0.;0.;0.|]
   |]
 
-let global_size = 64
+let global_size = 128
 
 let cell () = Random.float 1.
 (*let cell () = if Random.float 1. < 0.775 then 0. else cell () (* Probability to "meet" Orbium *)*)
@@ -123,6 +139,7 @@ let fft_shift (matrix: 'a array array): 'a array array =
   in
   iterate_rows 0
 
+(* Operations between floats and complex numbers *)
 let mult_float_complex (x: float) (c: Complex.t): Complex.t =
   Complex.{re=x*.c.re; im=x*.c.im}
 
@@ -132,7 +149,8 @@ let div_complex_float (c: Complex.t) (x: float): Complex.t =
 let imaginary = Complex.{re=0.;im=1.}
 
 (* Discrete Fourier Transform (slow but used when array is not of a power of two length *)
-let dft (v: float array): Complex.t array =
+let dft (v: number array): Complex.t array =
+  Printf.printf "Using DFT (slow)";
   let n = arrsize v in
   let y = Array.init (n) (fun x -> Complex.{re=0.;im=0.}) in
   let func k n' = Complex.exp (div_complex_float (mult_float_complex (-. 2. *. Float.pi *. (float_of_int k) *. (float_of_int n')) (imaginary)) (float_of_int n))
@@ -140,33 +158,25 @@ let dft (v: float array): Complex.t array =
   for k = 0 to (n-1) do
     let s = ref Complex.{re=0.;im=0.} in
     for n' = 0 to (n-1) do
-      s := Complex.add !s (mult_float_complex (v.(n')) (func k n'))
+      match v.(n') with
+      | Float   x -> s := Complex.add !s (mult_float_complex (x) (func k n'))
+      | Complex x -> s := Complex.add !s (Complex.mul (x) (func k n'))
     done;
     y.(k) <- !s
   done;
   y
 
-let dft_complex (v: Complex.t array): Complex.t array =
-  let n = arrsize v in
-  let y = Array.init (n) (fun x -> Complex.{re=0.;im=0.}) in
-  let func k n' = Complex.exp (div_complex_float (mult_float_complex (-. 2. *. Float.pi *. (float_of_int k) *. (float_of_int n')) (imaginary)) (float_of_int n))
-  in
-  for k = 0 to (n-1) do
-    let s = ref Complex.{re=0.;im=0.} in
-    for n' = 0 to (n-1) do
-      s := Complex.add !s (Complex.mul (v.(n')) (func k n'))
-    done;
-    y.(k) <- !s
-  done;
-  y
-
-let rec fft_1D (v: float array): Complex.t array =
+let rec fft_1D (v: number array): Complex.t array =
   let n = arrsize v in
   if n = 1 then
-    [|Complex.{re=v.(0);im=0.}|]
+    match v.(0) with
+    | Float   x -> [|Complex.{re=x;im=0.}|]
+    | Complex x -> [|x|]
   else
-    if (mod_float (Float.log2 (float_of_int n)) 2.) != mod_float (Float.log2 (float_of_int n)) 2. then
-      dft v
+    if not ((mod_float (Float.log2 (float_of_int n)) 2.) = mod_float (Float.log2 (float_of_int n)) 2.) then
+    match v.(0) with
+    | Float   x -> dft (Array.map (fun y -> Complex Complex.{re=float_value y;im=0.}) v)
+    | Complex x -> dft v
     else
     let even_part = Array.init (n/2) (fun x -> v.(2*x)    )
     and odd_part  = Array.init (n/2) (fun x -> v.(2*x + 1))
@@ -175,28 +185,8 @@ let rec fft_1D (v: float array): Complex.t array =
     and yo = fft_1D odd_part in
     let y = Array.init (n) (fun x -> Complex.{re=0.;im=0.}) in
     for index = 0 to ((n/2)-1) do
-      y.(index)         <- Complex.add (ye.(index)) (Complex.mul (yo.(index)) (Complex.pow (Complex.exp (div_complex_float (mult_float_complex (2. *. Float.pi) (imaginary)) (float_of_int n) )) (Complex.{re=float_of_int index;im=0.}) ));
-      y.(index + (n/2)) <- Complex.sub (ye.(index)) (Complex.mul (yo.(index)) (Complex.pow (Complex.exp (div_complex_float (mult_float_complex (2. *. Float.pi) (imaginary)) (float_of_int n) )) (Complex.{re=float_of_int index;im=0.}) ))
-    done;
-    y
-
-let rec fft_1D_complex (v: Complex.t array): Complex.t array =
-  let n = arrsize v in
-  if n = 1 then
-    v
-  else
-    if (mod_float (Float.log2 (float_of_int n)) 2.) != mod_float (Float.log2 (float_of_int n)) 2. then
-      dft_complex v
-    else
-    let even_part = Array.init (n/2) (fun x -> v.(2*x)    )
-    and odd_part  = Array.init (n/2) (fun x -> v.(2*x + 1))
-    in
-    let ye = fft_1D_complex even_part
-    and yo = fft_1D_complex odd_part in
-    let y = Array.init (n) (fun x -> Complex.{re=0.;im=0.}) in
-    for index = 0 to ((n/2)-1) do
-      y.(index)         <- Complex.add (ye.(index)) (Complex.mul (yo.(index)) (Complex.pow (Complex.exp (div_complex_float (mult_float_complex (2. *. Float.pi) (imaginary)) (float_of_int n) )) (Complex.{re=float_of_int index;im=0.}) ));
-      y.(index + (n/2)) <- Complex.sub (ye.(index)) (Complex.mul (yo.(index)) (Complex.pow (Complex.exp (div_complex_float (mult_float_complex (2. *. Float.pi) (imaginary)) (float_of_int n) )) (Complex.{re=float_of_int index;im=0.}) ))
+      y.(index)         <- Complex.add (ye.(index)) (Complex.mul (yo.(index)) (Complex.pow (Complex.exp (div_complex_float (mult_float_complex (-. 2. *. Float.pi) (imaginary)) (float_of_int n) )) (Complex.{re=float_of_int index;im=0.}) ));
+      y.(index + (n/2)) <- Complex.sub (ye.(index)) (Complex.mul (yo.(index)) (Complex.pow (Complex.exp (div_complex_float (mult_float_complex (-. 2. *. Float.pi) (imaginary)) (float_of_int n) )) (Complex.{re=float_of_int index;im=0.}) ))
     done;
     y
 
@@ -211,19 +201,18 @@ let rec ifft_1D (v: Complex.t array): Complex.t array =
       s := Complex.add !s (Complex.mul (v.(n')) (Complex.pow (w n') Complex.{re=float_of_int (-k * n');im=0.}))
     done;
     y.(k) <- div_complex_float !s (float_of_int n)
-    (*y.(k) <- Complex.div !s Complex.{re=float_of_int n;im=0.}*)
   done;
   y
 
-let fft2 matrix =
+let fft2 (matrix: float array array) =
   let sr = arrsize matrix in
   let sc = arrsize (matrix.(0)) in
   (* start with cols *)
   let fft_col = Array.init (sc) (fun x -> [||]) in
   for c = 0 to (sc - 1) do
-    let col = Array.init (sc) (fun x -> 0.) in
+    let col = Array.init (sc) (fun x -> Complex Complex.{re=0.;im=0.}) in
     for r = 0 to (sr - 1) do
-      col.(r) <- matrix.(r).(c);
+      col.(r) <- Float matrix.(r).(c);
     done;
     fft_col.(c) <- fft_1D col;
   done;
@@ -237,7 +226,7 @@ let fft2 matrix =
   (* apply to rows *)
   let fft = Array.make_matrix sr sc Complex.{re=0.;im=0.} in
   for r = 0 to (sr - 1) do
-    fft.(r) <- fft_1D_complex (fft_col_applied.(r))
+    fft.(r) <- fft_1D (Array.map (fun x -> Complex x) fft_col_applied.(r))
   done;
   fft
 
@@ -261,7 +250,6 @@ let ifft2 matrix =
     done
   done;
   (* apply to rows *)
-  (*let fft = Array.make_matrix sr sc Complex.{re=0.;im=0.} in*)
   let fft = Array.init sr (fun x -> [||]) in
   for r = 0 to (sr - 1) do
     fft.(r) <- (ifft_1D (fft_col_applied.(r)))
