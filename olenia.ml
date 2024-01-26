@@ -3,7 +3,7 @@ Random.self_init ()
 let global_size = 64
 
 let cell () = Random.float 1.
-(*let cell () = if Random.float 1. < 0.775 then 0. else cell () *)
+(*let cell () = if Random.float 1. < 0.775 then 0. else cell ()*)
 
 let time  = 10.
 let scale = 1
@@ -21,12 +21,7 @@ let mu = 0.15
 let sigma = 0.015
 
 let build_distance (radius: int) =
-let map_middle =
-  if map_size mod 2 = 0 then
-    Array.init (map_size) (fun x -> float_of_int (x - (map_size / 2) - 1) )
-  else
-    Array.init (map_size) (fun x -> float_of_int (x - (map_size / 2) - 2 ) )
-  in
+  let map_middle = Array.init (map_size) (fun x -> float_of_int (x - (map_size / 2) - (if map_size mod 2 = 0 then 1 else 2) ) ) in
   let s = Array.length map_middle in
   let d = Array.make_matrix (s) (s) 0. in
   Array.iteri (fun i r -> Array.iteri (fun j c -> d.(i).(j) <- ( (sqrt( (map_middle.(i) ** 2.) +. (map_middle.(j) ** 2.))) /. (float_of_int radius) )  ) r) d;
@@ -126,18 +121,22 @@ let complex_to_real_matrix (matrix: Complex.t array array) =
   Array.map (fun row -> Array.map (fun Complex.{re=elem;im=_} -> elem) row) matrix
 
 let mult_complex_matrices (mat1: Complex.t array array) (mat2: Complex.t array array): Complex.t array array =
-  Array.map2 (fun r1 r2 -> Array.map2 (Complex.mul) r1 r2 ) mat1 mat2
+  Array.map2 (fun r1 r2 -> Array.map2 (Complex.mul) r1 r2 ) mat2 mat1
 
 let k = build_kernel (build_distance kernel_radius)
 let fk = fft2 (fft_shift k)
 
 let next_world () =
-  apply_growth (complex_to_real_matrix (ifft2 (mult_complex_matrices (fft2 (world)) fk ) ))
+  fft2 world
+    |> mult_complex_matrices fk
+    |> ifft2
+    |> complex_to_real_matrix
+    |> apply_growth
 ;;
 
 let title  = "OLenia - Lenia in OCaml"
-let width  = 1024
-let height = 1024
+let width  = 800
+let height = 800
 let grid   = global_size
 let scaled_width  = width  / grid ;;
 let scaled_height = height / grid ;;
@@ -153,15 +152,18 @@ let higher_color = {r=0.; g=255.; b=14.};;
 let lower_color  = {r=47.; g=72.; b=88.};;
 let higher_color = {r=217.; g=69.; b=100.};;
 (* Theme Tournesol *)
+(*
 let lower_color  = {r=47.; g=72.; b=88.};;
 let higher_color = {r=209.; g=217.; b=69.};;
+*)
 
 Graphics.open_graph size_string;;
 Graphics.set_window_title title;;
 
 (*Set background color*)
-Graphics.set_color (Graphics.rgb (int_of_float (lower_color.r)) (int_of_float (lower_color.g)) (int_of_float (lower_color.b)));;
-Graphics.fill_rect 0 0 width height;;
+let set_background_color =
+  Graphics.set_color (Graphics.rgb (int_of_float (lower_color.r)) (int_of_float (lower_color.g)) (int_of_float (lower_color.b)));
+  Graphics.fill_rect 0 0 width height;;
 
 (* let float_to_color f_num = int_of_float (f_num *. 255.) *)
 
@@ -174,7 +176,7 @@ let float_to_color f_num =
 let draw_point x y color =
   let c = float_to_color color in (* convert value in cell to a color *)
   Graphics.set_color c;
-  Graphics.fill_circle ((x-1) * scaled_width) ((y-1) * scaled_height) (scaled_width/2);;
+  Graphics.fill_ellipse ((x-1) * scaled_width) ((y-1) * scaled_height) (scaled_width/2) (scaled_height/2);;
   (* If you prefer to draw squares instead of circles
   Graphics.fill_rect ((x-1) * scaled_width) ((y-1) * scaled_height) scaled_width scaled_height;;
   *)
@@ -182,19 +184,38 @@ let draw_point x y color =
 let print_world () =
   Array.iteri (fun i r -> Array.iteri (fun j c -> draw_point i j c) r) world
 
+let display_info (generation: int) (time: float) =
+  Graphics.moveto (1) (1);
+  Graphics.fill_rect 0 0 (9 * scaled_width) (3 * scaled_height);
+  let line1 = "G: " ^ string_of_int generation ^ " ; GPS=" ^ string_of_float (100. *. (1. /. time) |> Float.round |> (fun x -> x /. 100.) ) in
+  let line2 = "Map: " ^ string_of_int global_size ^ "x" ^ string_of_int global_size ^ " ; R=" ^ string_of_int kernel_radius in
+  let line3 = "Gauss: m=" ^ string_of_float mu ^ " s=" ^ string_of_float sigma in
+
+  Graphics.set_color Graphics.white;
+  Graphics.draw_string line1;
+  Graphics.moveto (1) (1*scaled_height);
+  Graphics.draw_string line2;
+  Graphics.moveto (1) (2*scaled_height);
+  Graphics.draw_string line3;
+  ;;
+
 let bigbang world =
-  let rec aux generation w =
+  let t1 = ref (Sys.time()) in
+  let rec aux ?(display=false) generation w =
     let event = Graphics.wait_next_event [ Poll ] in
     if event.Graphics.keypressed then
       match (Graphics.read_key ()) with
       | '\027' -> Graphics.clear_graph();Graphics.close_graph()
-      | 'r'    -> initialize_world (); aux 0 world
+      | 'r'    -> initialize_world (); aux ~display 0 world
+      | 'i'    -> aux ~display:(not display) generation world
       | _      -> ()
     else
       print_world ();
-      (*Printf.printf "%d\n" generation;*)
+      (*Printf.printf "%d" generation;*)
+      if display then display_info generation (Sys.time() -. !t1) else ();
+      t1 := Sys.time();
       next_world ();
-      aux (generation+1) w
+      aux ~display (generation+1) w
   in
   aux 0 world
 
